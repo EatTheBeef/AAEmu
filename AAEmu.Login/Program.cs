@@ -1,10 +1,11 @@
 ﻿using System;
+using System.IO;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using AAEmu.Commons.IO;
+using AAEmu.Commons.Utils.DB;
 using AAEmu.Login.Models;
-using AAEmu.Login.Utils;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -19,31 +20,43 @@ namespace AAEmu.Login
         private static Thread _thread = Thread.CurrentThread;
         private static DateTime _startTime;
         private static string Name => Assembly.GetExecutingAssembly().GetName().Name;
-        private static string Version => Assembly.GetExecutingAssembly().GetName().Version.ToString();
+        private static string Version => Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "???";
 
-        public static int UpTime => (int) (DateTime.Now - _startTime).TotalSeconds;
+        public static int UpTime => (int) (DateTime.UtcNow - _startTime).TotalSeconds;
 
         public static async Task Main(string[] args)
         {
             Initialization();
 
-            if (FileManager.FileExists(FileManager.AppPath + "Config.json"))
-                Configuration(args);
+            var mainConfig = Path.Combine(FileManager.AppPath, "Config.json");
+            if (File.Exists(mainConfig))
+                Configuration(args, mainConfig);
             else
             {
-                _log.Error($"{FileManager.AppPath}Config.json doesn't exist!");
+                _log.Fatal($"{mainConfig} doesn't exist!");
                 return;
             }
 
-            _log.Info("{0} version {1}", Name, Version);
+            _log.Info($"{Name} version {Version}");
 
-            var connection = MySQL.Create();
+            // Apply MySQL Configuration
+            try
+            {
+                MySQL.SetConfiguration(AppConfiguration.Instance.Connections.MySQLProvider);
+            }
+            catch
+            {
+                _log.Fatal("MySQL configuration could not be loaded !");
+                return;
+            }
+            
+            // Test the DB connection
+            var connection = MySQL.CreateConnection();
             if (connection == null)
             {
                 LogManager.Flush();
                 return;
             }
-
             connection.Close();
 
             var builder = new HostBuilder()
@@ -68,19 +81,21 @@ namespace AAEmu.Login
         private static void Initialization()
         {
             _thread.Name = "AA.LoginServer Base Thread";
-            _startTime = DateTime.Now;
+            _startTime = DateTime.UtcNow;
         }
 
-        private static void Configuration(string[] args)
+        private static void Configuration(string[] args, string mainConfigJson)
         {
+            var configJsonFile = Path.Combine(FileManager.AppPath, "Config.json");
             var configurationBuilder = new ConfigurationBuilder()
-                .AddJsonFile(FileManager.AppPath + "Config.json")
+                .AddJsonFile(mainConfigJson)
                 .AddCommandLine(args)
                 .Build();
 
             configurationBuilder.Bind(AppConfiguration.Instance);
 
-            LogManager.Configuration = new XmlLoggingConfiguration(FileManager.AppPath + "NLog.config", false);
+            LogManager.ThrowConfigExceptions = false;
+            LogManager.Configuration = new XmlLoggingConfiguration(Path.Combine(FileManager.AppPath, "NLog.config"));
         }
     }
 }

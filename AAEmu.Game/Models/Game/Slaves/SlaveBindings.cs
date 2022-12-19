@@ -1,11 +1,13 @@
-﻿namespace AAEmu.Game.Models.Game.Slaves
+﻿using AAEmu.Game.Models.Game.DoodadObj.Static;
+
+namespace AAEmu.Game.Models.Game.Slaves
 {
     public class SlaveBindings
     {
-        public int Id { get; set; }
-        public int OwnerId { get; set; }
+        public uint Id { get; set; }
+        public uint OwnerId { get; set; }
         public string OwnerType { get; set; }
-        public int SlaveId { get; set; }
-        public int AttachPointId { get; set; }
+        public uint SlaveId { get; set; }
+        public AttachPointKind AttachPointId { get; set; }
     }
 }

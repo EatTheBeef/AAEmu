@@ -1,5 +1,8 @@
-using System;
+﻿using System;
+
+using AAEmu.Game.Core.Packets;
 using AAEmu.Game.Models.Game.Char;
+using AAEmu.Game.Models.Game.DoodadObj;
 using AAEmu.Game.Models.Game.Skills.Templates;
 using AAEmu.Game.Models.Game.Units;
 using AAEmu.Game.Models.Game.World;
@@ -14,8 +17,8 @@ namespace AAEmu.Game.Models.Game.Skills.Effects
         public override bool OnActionTime => false;
 
         public override void Apply(Unit caster, SkillCaster casterObj, BaseUnit target, SkillCastTarget targetObj,
-            CastAction castObj,
-            Skill skill, SkillObject skillObject, DateTime time)
+            CastAction castObj, EffectSource source, SkillObject skillObject, DateTime time,
+            CompressedGamePackets packetBuilder = null)
         {
             _log.Debug("InteractionEffect, {0}", WorldInteraction);
 
@@ -27,12 +30,20 @@ namespace AAEmu.Game.Models.Game.Skills.Effects
             }
 
             _log.Debug("InteractionEffect, Action: {0}", classType); // TODO help to debug...
-            
-            var action = (IWorldInteraction)Activator.CreateInstance(classType);
-            action.Execute(caster, casterObj, target, targetObj, skill.Template.Id);
 
-            if (caster is Character character)
-                character.Quests.OnInteraction(WorldInteraction);
+            caster.Buffs.TriggerRemoveOn(Buffs.BuffRemoveOn.Interaction);
+
+            var action = (IWorldInteraction)Activator.CreateInstance(classType);
+            if (source is {Skill: { }} && casterObj != null && target != null && targetObj != null && source.Skill.Template != null)
+            {
+                action?.Execute(caster, casterObj, target, targetObj, source.Skill.Template.Id, DoodadId);
+            }
+
+            if (caster is not Character character) { return; }
+            if (target is Doodad)
+            {
+                character.Quests.OnInteraction(WorldInteraction, target);
+            }
         }
     }
 }

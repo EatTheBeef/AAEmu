@@ -1,5 +1,6 @@
 using System.Net;
 using AAEmu.Commons.Network;
+using AAEmu.Commons.Network.Core;
 using AAEmu.Login.Core.Network.Internal;
 using AAEmu.Login.Models;
 
@@ -9,7 +10,7 @@ namespace AAEmu.Login.Core.Network.Connections
     {
         private Session _session;
 
-        public uint Id => _session.Id;
+        public uint Id => _session.SessionId;
         public IPAddress Ip => _session.Ip;
         public GameServer GameServer { get; set; }
         public bool Block { get; set; }

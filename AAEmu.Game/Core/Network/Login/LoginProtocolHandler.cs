@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text;
 using AAEmu.Commons.Network;
+using AAEmu.Commons.Network.Core;
 using AAEmu.Game.Core.Network.Connections;
 using NLog;
 
@@ -22,7 +23,7 @@ namespace AAEmu.Game.Core.Network.Login
 
         public override void OnConnect(Session session)
         {
-            _log.Info("Connect to {0} established, session id: {1}", session.Ip.ToString(), session.Id.ToString(CultureInfo.InvariantCulture));
+            _log.Info("Connect to {0} established, session id: {1}", session.Ip.ToString(), session.SessionId.ToString(CultureInfo.InvariantCulture));
             var con = new LoginConnection(session);
             con.OnConnect();
             LoginNetwork.Instance.SetConnection(con);
@@ -30,7 +31,7 @@ namespace AAEmu.Game.Core.Network.Login
 
         public override void OnDisconnect(Session session)
         {
-            _log.Info("Connect to LoginServer losted");
+            _log.Info("Connect to LoginServer has been lost");
             LoginNetwork.Instance.SetConnection(null);
             session.Close();
 
@@ -48,7 +49,7 @@ namespace AAEmu.Game.Core.Network.Login
                 stream.Insert(0, _lastPacket);
                 _lastPacket = null;
             }
-            stream.Insert(stream.Count, buf);
+            stream.Insert(stream.Count, buf, 0, bytes);
             while(stream != null && stream.Count > 0)
             {
                 ushort len;

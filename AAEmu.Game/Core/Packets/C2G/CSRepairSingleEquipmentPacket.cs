@@ -1,4 +1,4 @@
-using AAEmu.Commons.Network;
+﻿using AAEmu.Commons.Network;
 using AAEmu.Game.Core.Network.Game;
 using AAEmu.Game.Models.Game.Items;
 
@@ -6,15 +6,15 @@ namespace AAEmu.Game.Core.Packets.C2G
 {
     public class CSRepairSingleEquipmentPacket : GamePacket
     {
-        public CSRepairSingleEquipmentPacket() : base(0x03c, 1)
+        public CSRepairSingleEquipmentPacket() : base(CSOffsets.CSRepairSingleEquipmentPacket, 1)
         {
         }
 
         public override void Read(PacketStream stream)
         {
-            stream.ReadByte();
+            //stream.ReadByte(); // not for version 1.2
             var slotType = (SlotType)stream.ReadByte();
-            stream.ReadByte();
+            //stream.ReadByte(); // not for version 1.2
             var slot = stream.ReadByte();
             var autoUseAAPoint = stream.ReadBoolean();
 

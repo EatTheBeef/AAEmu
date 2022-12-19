@@ -1,4 +1,4 @@
-using AAEmu.Commons.Network;
+﻿using AAEmu.Commons.Network;
 
 namespace AAEmu.Game.Models.Game.Skills
 {
@@ -7,8 +7,8 @@ namespace AAEmu.Game.Models.Game.Skills
         Skill = 0,
         Plot = 1,
         Buff = 2,
-        Unk2 = 3,
-        Unk3 = 4
+        BuffTarget = 3,
+        DestroyTarget = 4
     }
 
     public abstract class CastAction : PacketMarshaler
@@ -26,7 +26,10 @@ namespace AAEmu.Game.Models.Game.Skills
     {
         private uint _skillId;
         private ushort _tlId;
-
+        
+        public uint SkillId { get => _skillId; }
+        public ushort TlId { get => _tlId; }
+        
         public CastSkill(uint skillId, ushort tlId)
         {
             Type = CastType.Skill;
@@ -72,20 +75,21 @@ namespace AAEmu.Game.Models.Game.Skills
 
     public class CastBuff : CastAction
     {
-        private Effect _effect;
+        private Buff _buff;
+        public Buff Buff { get => _buff; }
 
-        public CastBuff(Effect effect)
+        public CastBuff(Buff buff)
         {
             Type = CastType.Buff;
-            _effect = effect;
+            _buff = buff;
         }
 
         public override PacketStream Write(PacketStream stream)
         {
             base.Write(stream);
-            stream.Write(_effect.Template.BuffId);
-            stream.WriteBc(_effect.Owner.ObjId);
-            stream.Write(_effect.Index);
+            stream.Write(_buff.Template.BuffId);
+            stream.WriteBc(_buff.Owner.ObjId);
+            stream.Write(_buff.Index);
             stream.Write(true); // t
             stream.Write(false); // t
             return stream;
@@ -96,7 +100,7 @@ namespace AAEmu.Game.Models.Game.Skills
     {
         public CastUnk2()
         {
-            Type = CastType.Unk2;
+            Type = CastType.BuffTarget;
         }
 
         public override PacketStream Write(PacketStream stream)
@@ -113,7 +117,7 @@ namespace AAEmu.Game.Models.Game.Skills
     {
         public CastUnk3()
         {
-            Type = CastType.Unk3;
+            Type = CastType.DestroyTarget;
         }
 
         public override PacketStream Write(PacketStream stream)

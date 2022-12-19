@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using AAEmu.Commons.Utils;
@@ -13,6 +13,7 @@ namespace AAEmu.Game.Core.Managers.World
     public class FactionManager : Singleton<FactionManager>
     {
         private static Logger _log = LogManager.GetCurrentClassLogger();
+        private bool _loaded = false;
 
         private Dictionary<uint, SystemFaction> _systemFactions;
         private List<FactionRelation> _relations;
@@ -32,6 +33,9 @@ namespace AAEmu.Game.Core.Managers.World
 
         public void Load()
         {
+            if (_loaded)
+                return;
+            
             _systemFactions = new Dictionary<uint, SystemFaction>();
             _relations = new List<FactionRelation>();
             using (var connection = SQLite.CreateConnection())
@@ -49,7 +53,7 @@ namespace AAEmu.Game.Core.Managers.World
                             var faction = new SystemFaction
                             {
                                 Id = reader.GetUInt32("id"),
-                                Name = reader.GetString("name"),
+                                Name = LocalizationManager.Instance.Get("system_factions", "name", reader.GetUInt32("id")),
                                 OwnerName = reader.GetString("owner_name"),
                                 UnitOwnerType = (sbyte) reader.GetInt16("owner_type_id"),
                                 OwnerId = reader.GetUInt32("owner_id"),
@@ -93,6 +97,8 @@ namespace AAEmu.Game.Core.Managers.World
 
                 _log.Info("Loaded {0} faction relations", _relations.Count);
             }
+            
+            _loaded = true;
         }
 
         public void SendFactions(Character character)

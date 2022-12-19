@@ -1,4 +1,7 @@
-# [![AAEmu](https://boards.aaemu.pw/assets/files/2018-10-11/1539288486-150348-aaemu-blank-text.png)](https://boards.aaemu.pw/)
+# ![AAEmu](https://i.imgur.com/NFDY376.png)
+
+[![Coverage Status](https://coveralls.io/repos/github/AAEmu/AAEmu/badge.svg?branch=develop)](https://coveralls.io/github/AAEmu/AAEmu?branch=master)
+![Discord](https://img.shields.io/discord/479677351618281472?color=%235865F2&label=Discord&logo=Discord&logoColor=%23FFFFFF")
 
 __Open source server software for ArcheAge written in .Net Core__
 
@@ -7,8 +10,6 @@ Head over to the [wiki](https://github.com/atel0/AAEmu/wiki).
 If you don't find what you're looking for there, [talk to a human](#discussion). Please do not use our issue tracker for support requests.
 
 ### Discussion
-- [Site](https://aaemu.info/)
-- [Forums](https://boards.aaemu.pw/)
 - [Community Discord](https://discord.gg/vn8E8E6)
 - [FAQ](https://github.com/atel0/AAEmu/wiki/FAQ)
 

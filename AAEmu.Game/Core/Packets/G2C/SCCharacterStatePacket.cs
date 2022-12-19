@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using AAEmu.Commons.Network;
 using AAEmu.Game.Core.Network.Game;
 using AAEmu.Game.Models.Game.Char;
@@ -33,9 +33,9 @@ namespace AAEmu.Game.Core.Packets.G2C
             for (var i = 0; i < 11; i++)
                 stream.Write((uint)0); // abilityExp
 
-            stream.Write(0); // unreadMail
-            stream.Write(0); // unreadMiaMail
-            stream.Write(0); // unreadCommercialMail
+            stream.Write(_character.Mails.unreadMailCount.Received); // unreadMail
+            stream.Write(_character.Mails.unreadMailCount.MiaReceived); // unreadMiaMail
+            stream.Write(_character.Mails.unreadMailCount.CommercialReceived); // unreadCommercialMail
             stream.Write(_character.NumInventorySlots);
             stream.Write(_character.NumBankSlots);
             stream.Write(_character.Money); // moneyAmount - Inventory

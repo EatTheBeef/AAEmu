@@ -1,11 +1,20 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Threading;
+
+using AAEmu.Commons.Utils;
+using AAEmu.Game.Core.Managers;
+using AAEmu.Game.Core.Managers.UnitManagers;
 using AAEmu.Game.Core.Managers.World;
 using AAEmu.Game.Core.Packets.G2C;
 using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Models.Game.DoodadObj;
+using AAEmu.Game.Models.Game.Gimmicks;
 using AAEmu.Game.Models.Game.Housing;
+using AAEmu.Game.Models.Game.NPChar;
 using AAEmu.Game.Models.Game.Units;
+using AAEmu.Game.Models.Game.Units.Route;
+
 using NLog;
 
 namespace AAEmu.Game.Models.Game.World
@@ -18,16 +27,20 @@ namespace AAEmu.Game.Models.Game.World
         private readonly object _objectsLock = new object();
         private GameObject[] _objects;
         private int _objectsSize, _charactersSize;
+        private Region[] _neighbors;
+        private int _playerCount;
 
         public int X { get; }
         public int Y { get; }
-        public int Id => Y + 1024 * X;
+        public int Id => Y + (1024 * X);
+        public uint ZoneKey { get; set; }
 
-        public Region(uint worldId, int x, int y)
+        public Region(uint worldId, int x, int y, uint zoneKey) 
         {
             _worldId = worldId;
             X = x;
             Y = y;
+            ZoneKey = zoneKey;
         }
 
         public void AddObject(GameObject obj)
@@ -51,14 +64,27 @@ namespace AAEmu.Game.Models.Game.World
                 _objects[_objectsSize] = obj;
                 _objectsSize++;
 
-                obj.Position.WorldId = _worldId;
-                var zoneId = WorldManager.Instance.GetZoneId(_worldId, obj.Position.X, obj.Position.Y);
+                obj.Transform.WorldId = _worldId;
+                var zoneId = WorldManager.Instance.GetZoneId(_worldId, obj.Transform.World.Position.X, obj.Transform.World.Position.Y);
                 if (zoneId > 0)
-                    obj.Position.ZoneId = zoneId;
+                    obj.Transform.ZoneId = zoneId;
 
                 if (obj is Character)
+                {
                     _charactersSize++;
+                    foreach (var region in GetNeighbors())
+                    {
+                        Interlocked.Increment(ref region._playerCount);
+                    }
+                }
+
             }
+            // Show debug info to subscribed players
+            if (obj.Transform._debugTrackers.Count > 0)
+                foreach (var chr in obj.Transform._debugTrackers)
+                    chr?.SendMessage("[{0}] {1} entered region ({2} {3})){4}",
+                        DateTime.UtcNow.ToString("HH:mm:ss"), obj.ObjId, X, Y,
+                        obj is BaseUnit bu ? " - " + bu.Name : "");
         }
 
         public void RemoveObject(GameObject obj) // TODO Нужно доделать =_+
@@ -95,8 +121,21 @@ namespace AAEmu.Game.Models.Game.World
                 }
 
                 if (obj is Character)
+                {
                     _charactersSize--;
+                    foreach (var region in GetNeighbors())
+                    {
+                        Interlocked.Decrement(ref region._playerCount);
+                    }
+                }
+                
             }
+            // Show debug info to subscribed players
+            if (obj.Transform._debugTrackers.Count > 0)
+                foreach (var chr in obj.Transform._debugTrackers)
+                    chr?.SendMessage("[{0}] {1} left the region ({2} {3})){4}",
+                        DateTime.UtcNow.ToString("HH:mm:ss"), obj.ObjId, X, Y,
+                        obj is BaseUnit bu ? " - " + bu.Name : "");
         }
 
         public void AddToCharacters(GameObject obj)
@@ -104,35 +143,44 @@ namespace AAEmu.Game.Models.Game.World
             if (_objects == null)
                 return;
 
-            // показать игроку все обьекты в регионе
-            if (obj is Character)
+            // Show the player all the facilities in the region when he/she is added
+            if (obj is Character objectAsCharacter)
             {
-                var character = (Character)obj;
-
-                var units = GetList(new List<Unit>(), obj.ObjId);
-                for (var i = 0; i < units.Count; i++)
+                var objectsInRegion = GetList(new List<GameObject>(), obj.ObjId);
+                foreach (var go in objectsInRegion)
                 {
-                    if (units[i] is House house)
-                        house.AddVisibleObject(character);
-                    else
-                        character.SendPacket(new SCUnitStatePacket(units[i]));
-                }
+                    // Ignore doodads here, as we have a special packet for those
+                    if (go is Doodad doodad)
+                    {
+                        //var unit = WorldManager.Instance.GetUnit(doodad.OwnerObjId);
+                        //doodad.FuncGroupId = doodad.GetFuncGroupId();  // Start phase
+                        //doodad.DoPhaseFuncs(unit, (int)doodad.FuncGroupId);
+                        continue;
+                    }
 
+                    // turn on the motion of the visible NPC
+                    if (go is Npc npc && npc.Ai != null) 
+                        npc.Ai.ShouldTick = true;
+                    
+                    go.AddVisibleObject(objectAsCharacter);
+                }
+                
+                // Handle Doodads separately with sets of SCDoodadsCreatedPacket
                 var doodads = GetList(new List<Doodad>(), obj.ObjId).ToArray();
-                for (var i = 0; i < doodads.Length; i += 30)
+                for (var i = 0; i < doodads.Length; i += SCDoodadsCreatedPacket.MaxCountPerPacket)
                 {
                     var count = doodads.Length - i;
-                    var temp = new Doodad[count <= 30 ? count : 30];
+                    var temp = new Doodad[count <= SCDoodadsCreatedPacket.MaxCountPerPacket ? count : SCDoodadsCreatedPacket.MaxCountPerPacket];
                     Array.Copy(doodads, i, temp, 0, temp.Length);
-                    character.SendPacket(new SCDoodadsCreatedPacket(temp));
+                    objectAsCharacter.SendPacket(new SCDoodadsCreatedPacket(temp));
                 }
-
-                // TODO ... others types...
             }
-
-            // показать обьект всем игрокам в регионе
-            foreach (var character in GetList(new List<Character>(), obj.ObjId))
-                obj.AddVisibleObject(character);
+            
+            // show the object to all players in the region
+            foreach (var characterInRegion in GetList(new List<Character>(), obj.ObjId))
+            {
+                obj.AddVisibleObject(characterInRegion);
+            }
         }
 
         public void RemoveFromCharacters(GameObject obj)
@@ -140,43 +188,58 @@ namespace AAEmu.Game.Models.Game.World
             if (_objects == null)
                 return;
 
-            // убрать у игрока все видимые обьекты в регионе
-            if (obj is Character)
+            // remove all visible objects in the region from the player
+            if (obj is Character character1)
             {
-                var character = (Character)obj;
-
-                var unitIds = GetListId<Unit>(new List<uint>(), obj.ObjId).ToArray();
-                for (var i = 0; i < unitIds.Length; i += 500)
+                //var unitIds = GetListId<Unit>(new List<uint>(), obj.ObjId).ToArray();
+                var unitIds = GetListId<Unit>(new List<uint>(), character1.ObjId).ToArray();
+                var units = GetList(new List<Unit>(), character1.ObjId);
+                foreach (var t in units)
                 {
-                    var offset = i * 500;
+                    if (t is Npc npc && npc.Ai != null)
+                    {
+                        npc.Ai.ShouldTick = false;
+                    }
+                }
+
+                for (var offset = 0; offset < unitIds.Length; offset += SCUnitsRemovedPacket.MaxCountPerPacket)
+                {
                     var length = unitIds.Length - offset;
-                    var temp = new uint[length > 500 ? 500 : length];
+                    var temp = new uint[length > SCUnitsRemovedPacket.MaxCountPerPacket ? SCUnitsRemovedPacket.MaxCountPerPacket : length];
                     Array.Copy(unitIds, offset, temp, 0, temp.Length);
-                    character.SendPacket(new SCUnitsRemovedPacket(temp));
+                    character1.SendPacket(new SCUnitsRemovedPacket(temp));
                 }
-
-                var doodadIds = GetListId<Doodad>(new List<uint>(), obj.ObjId).ToArray();
-                for (var i = 0; i < doodadIds.Length; i += 400)
+                var doodadIds = GetListId<Doodad>(new List<uint>(), character1.ObjId).ToArray();
+                for (var offset = 0; offset < doodadIds.Length; offset += SCDoodadsRemovedPacket.MaxCountPerPacket)
                 {
-                    var offset = i * 400;
                     var length = doodadIds.Length - offset;
-                    var last = length <= 400;
-                    var temp = new uint[last ? length : 400];
+                    var last = length <= SCDoodadsRemovedPacket.MaxCountPerPacket;
+                    var temp = new uint[last ? length : SCDoodadsRemovedPacket.MaxCountPerPacket];
                     Array.Copy(doodadIds, offset, temp, 0, temp.Length);
-                    character.SendPacket(new SCDoodadsRemovedPacket(last, temp));
+                    character1.SendPacket(new SCDoodadsRemovedPacket(last, temp));
                 }
-
                 // TODO ... others types...
             }
 
-            // убрать обьект у всех игроков в регионе
+            // remove the object from all players in the region
             foreach (var character in GetList(new List<Character>(), obj.ObjId))
+            {
                 obj.RemoveVisibleObject(character);
+            }
         }
 
         public Region[] GetNeighbors()
         {
-            return WorldManager.Instance.GetNeighbors(_worldId, X, Y);
+            //Will neighbor regions ever change?
+            if (_neighbors == null)
+            {
+                _neighbors = WorldManager.Instance.GetNeighbors(_worldId, X, Y);
+                return _neighbors;
+            }
+            else
+            {
+                return _neighbors;
+            }
         }
 
         public bool AreNeighborsEmpty()
@@ -192,6 +255,11 @@ namespace AAEmu.Game.Models.Game.World
         public bool IsEmpty()
         {
             return _charactersSize <= 0;
+        }
+
+        public bool HasPlayerActivity()
+        {
+            return _playerCount > 0;
         }
 
         public List<uint> GetObjectIdsList(List<uint> result, uint exclude)
@@ -267,7 +335,7 @@ namespace AAEmu.Game.Models.Game.World
             return result;
         }
 
-        public List<T> GetList<T>(List<T> result, uint exclude, float x, float y, float sqrad) where T : class
+        public List<T> GetList<T>(List<T> result, uint exclude, float x, float y, float sqrad, bool useModelSize = false) where T : class
         {
             GameObject[] temp;
             lock (_objectsLock)
@@ -283,13 +351,18 @@ namespace AAEmu.Game.Models.Game.World
                 var item = obj as T;
                 if (item == null || obj.ObjId == exclude)
                     continue;
-                var dx = obj.Position.X - x;
+
+                var finalrad = sqrad;
+                if (useModelSize)
+                    finalrad += obj.ModelSize * obj.ModelSize;
+                
+                var dx = obj.Transform.World.Position.X - x;
                 dx *= dx;
-                if (dx > sqrad)
+                if (dx > finalrad)
                     continue;
-                var dy = obj.Position.Y - y;
+                var dy = obj.Transform.World.Position.Y - y;
                 dy *= dy;
-                if (dx + dy < sqrad)
+                if (dx + dy < finalrad)
                     result.Add(item);
             }
 
@@ -308,10 +381,7 @@ namespace AAEmu.Game.Models.Game.World
 
         public override int GetHashCode()
         {
-            var result = (int)_worldId;
-            result = (result * 397) ^ X;
-            result = (result * 397) ^ Y;
-            return result;
+            return HashCode.Combine(_worldId, X, Y);
         }
     }
 }

@@ -1,17 +1,16 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Net;
 using AAEmu.Commons.Network;
+using AAEmu.Commons.Network.Core;
+using AAEmu.Commons.Utils.DB;
 using AAEmu.Game.Core.Managers;
-using AAEmu.Game.Core.Managers.Id;
+using AAEmu.Game.Core.Managers.UnitManagers;
 using AAEmu.Game.Core.Network.Game;
-using AAEmu.Game.Core.Packets.G2C;
 using AAEmu.Game.Models;
 using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Models.Game.Housing;
-using AAEmu.Game.Models.Game.Items;
 using AAEmu.Game.Models.Tasks;
-using AAEmu.Game.Utils.DB;
 
 namespace AAEmu.Game.Core.Network.Connections
 {
@@ -25,7 +24,7 @@ namespace AAEmu.Game.Core.Network.Connections
     {
         private Session _session;
 
-        public uint Id => _session.Id;
+        public uint Id => _session.SessionId;
         public uint AccountId { get; set; }
         public IPAddress Ip => _session.Ip;
         public PacketStream LastPacket { get; set; }
@@ -37,10 +36,11 @@ namespace AAEmu.Game.Core.Network.Connections
         public List<IDisposable> Subscribers { get; set; }
         public GameState State { get; set; }
         public Character ActiveChar { get; set; }
-        public readonly Dictionary<uint, Character> Characters;
+        public Dictionary<uint, Character> Characters;
         public Dictionary<uint, House> Houses;
         
         public Task LeaveTask { get; set; }
+        public DateTime LastPing { get; set; }
 
         public GameConnection(Session session)
         {
@@ -50,6 +50,7 @@ namespace AAEmu.Game.Core.Network.Connections
             Characters = new Dictionary<uint, Character>();
             Houses = new Dictionary<uint, House>();
             Payment = new AccountPayment(this);
+            // AddAttribute("gmFlag", true);
         }
 
         public void SendPacket(GamePacket packet)
@@ -78,7 +79,7 @@ namespace AAEmu.Game.Core.Network.Connections
             foreach (var subscriber in Subscribers)
                 subscriber.Dispose();
 
-            Save();
+            SaveAndRemoveFromWorld();
         }
 
         public void Shutdown()
@@ -110,7 +111,7 @@ namespace AAEmu.Game.Core.Network.Connections
                 using (var command = connection.CreateCommand())
                 {
                     command.Connection = connection;
-                    command.CommandText = "SELECT id FROM characters WHERE `account_id` = @account_id";
+                    command.CommandText = "SELECT id FROM characters WHERE `account_id` = @account_id and `deleted`=0";
                     command.Parameters.AddWithValue("@account_id", AccountId);
                     using (var reader = command.ExecuteReader())
                     {
@@ -124,85 +125,41 @@ namespace AAEmu.Game.Core.Network.Connections
                     var character = Character.Load(connection, id, AccountId);
                     if (character == null)
                         continue; // TODO ...
-                    Characters.Add(character.Id, character);
+                    if (!CharacterManager.Instance.CheckForDeletedCharactersDeletion(character, this, connection))
+                    {
+                        Characters.Add(character.Id, character);
+                    }
                 }
 
+                /*
                 foreach (var character in Characters.Values)
                     character.Inventory.Load(connection, SlotType.Equipment);
+                */
             }
 
             Houses.Clear();
             HousingManager.Instance.GetByAccountId(Houses, AccountId);
         }
 
-        public void SetDeleteCharacter(uint characterId)
+        /// <summary>
+        /// Called when closing a connection
+        /// </summary>
+        public void SaveAndRemoveFromWorld()
         {
-            if (Characters.ContainsKey(characterId))
-            {
-                var character = Characters[characterId];
-                character.DeleteRequestTime = DateTime.UtcNow;
-                character.DeleteTime = character.DeleteRequestTime.AddDays(7); // TODO to config...
-                SendPacket(new SCDeleteCharacterResponsePacket(character.Id, 2, character.DeleteRequestTime,
-                    character.DeleteTime));
-
-                using (var connection = MySQL.CreateConnection())
-                {
-                    using (var command = connection.CreateCommand())
-                    {
-                        command.CommandText =
-                            "UPDATE characters SET `delete_request_time` = @delete_request_time, `delete_time` = @delete_time WHERE `id` = @id";
-                        command.Prepare();
-                        command.Parameters.AddWithValue("@delete_request_time", character.DeleteRequestTime);
-                        command.Parameters.AddWithValue("@delete_time", character.DeleteTime);
-                        command.Parameters.AddWithValue("@id", character.Id);
-                        command.ExecuteNonQuery();
-                    }
-                }
-            }
-            else
-            {
-                SendPacket(new SCDeleteCharacterResponsePacket(characterId, 0));
-            }
-        }
-
-        public void SetRestoreCharacter(uint characterId)
-        {
-            if (Characters.ContainsKey(characterId))
-            {
-                var character = Characters[characterId];
-                character.DeleteRequestTime = DateTime.MinValue;
-                character.DeleteTime = DateTime.MinValue;
-                SendPacket(new SCCancelCharacterDeleteResponsePacket(character.Id, 3));
-
-                using (var connection = MySQL.CreateConnection())
-                {
-                    using (var command = connection.CreateCommand())
-                    {
-                        command.CommandText =
-                            "UPDATE characters SET `delete_request_time` = @delete_request_time, `delete_time` = @delete_time WHERE `id` = @id";
-                        command.Prepare();
-                        command.Parameters.AddWithValue("@delete_request_time", character.DeleteRequestTime);
-                        command.Parameters.AddWithValue("@delete_time", character.DeleteTime);
-                        command.Parameters.AddWithValue("@id", character.Id);
-                        command.ExecuteNonQuery();
-                    }
-                }
-            }
-            else
-            {
-                SendPacket(new SCCancelCharacterDeleteResponsePacket(characterId, 4));
-            }
-        }
-
-        public void Save()
-        {
+            // TODO: this needs a rewrite
             if (ActiveChar == null)
                 return;
 
-            ActiveChar.Delete();
-            ObjectIdManager.Instance.ReleaseId(ActiveChar.ObjId);
+            // stopping the TransferTelescopeTickStartTask if character disconnected
+            TransferTelescopeManager.Instance.StopTransferTelescopeTickAsync().GetAwaiter().GetResult();
 
-            ActiveChar.Save();
+            ActiveChar.Delete();
+            // Removed ReleaseId here to try and fix party/raid disconnect and reconnect issues. Replaced with saving the data
+            //ObjectIdManager.Instance.ReleaseId(ActiveChar.ObjId);
+
+            // Do a manual save here as it's no longer in _characters at this point
+            // TODO: might need a better option like saving this transaction for later to be used by the SaveMananger
+            ActiveChar.SaveDirectlyToDatabase();
         }
     }
 }

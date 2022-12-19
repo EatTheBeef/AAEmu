@@ -2,16 +2,21 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using AAEmu.Commons.Utils;
+using AAEmu.Commons.Utils.DB;
 using AAEmu.Login.Core.Network.Connections;
 using AAEmu.Login.Core.Packets.L2C;
 using AAEmu.Login.Core.Packets.L2G;
-using AAEmu.Login.Utils;
+using AAEmu.Login.Models;
+using MySql.Data.MySqlClient;
+using NLog;
 
 namespace AAEmu.Login.Core.Controllers
 {
     public class LoginController : Singleton<LoginController>
     {
         private Dictionary<byte, Dictionary<uint, uint>> _tokens; // gsId, [token, accountId]
+        private static Logger _log = LogManager.GetCurrentClassLogger();
+        private static bool _autoAccount = AppConfiguration.Instance.AutoAccount;
 
         protected LoginController()
         {
@@ -25,7 +30,7 @@ namespace AAEmu.Login.Core.Controllers
         /// <param name="username"></param>
         public static void Login(LoginConnection connection, string username)
         {
-            using (var connect = MySQL.Create())
+            using (var connect = MySQL.CreateConnection())
             {
                 using (var command = connect.CreateCommand())
                 {
@@ -44,7 +49,7 @@ namespace AAEmu.Login.Core.Controllers
 
                         connection.AccountId = reader.GetUInt32("id");
                         connection.AccountName = username;
-                        connection.LastLogin = DateTime.Now;
+                        connection.LastLogin = DateTime.UtcNow;
                         connection.LastIp = connection.Ip;
 
                         connection.SendPacket(new ACJoinResponsePacket(0, 6));
@@ -62,7 +67,7 @@ namespace AAEmu.Login.Core.Controllers
         /// <param name="password"></param>
         public static void Login(LoginConnection connection, string username, IEnumerable<byte> password)
         {
-            using (var connect = MySQL.Create())
+            using (var connect = MySQL.CreateConnection())
             {
                 using (var command = connect.CreateCommand())
                 {
@@ -73,7 +78,16 @@ namespace AAEmu.Login.Core.Controllers
                     {
                         if (!reader.Read())
                         {
-                            connection.SendPacket(new ACLoginDeniedPacket(2));
+                            if (_autoAccount)
+                            {
+                                reader.Close();
+                                CreateAndLoginInvalid(connection, username, password, connect);
+                            }
+                            else
+                            {
+                                connection.SendPacket(new ACLoginDeniedPacket(2));
+                            }
+
                             return;
                         }
 
@@ -86,13 +100,37 @@ namespace AAEmu.Login.Core.Controllers
 
                         connection.AccountId = reader.GetUInt32("id");
                         connection.AccountName = username;
-                        connection.LastLogin = DateTime.Now;
+                        connection.LastLogin = DateTime.UtcNow;
                         connection.LastIp = connection.Ip;
 
+                        _log.Info("{0} connected.", connection.AccountName);
                         connection.SendPacket(new ACJoinResponsePacket(0, 6));
                         connection.SendPacket(new ACAuthResponsePacket(connection.AccountId, 6));
                     }
                 }
+            }
+        }
+
+        public static void CreateAndLoginInvalid(LoginConnection connection, string username, IEnumerable<byte> password, MySqlConnection connect)
+        {
+            var pass = Convert.ToBase64String(password.ToArray());
+
+            using (var command = connect.CreateCommand())
+            {
+                command.CommandText =
+                    "INSERT into users (username, password, email, last_ip) VALUES (@username, @password, \"\", \"\")";
+                command.Parameters.AddWithValue("@username", username);
+                command.Parameters.AddWithValue("@password", pass);
+                command.Prepare();
+
+                if (command.ExecuteNonQuery() != 1)
+                {
+                    connection.SendPacket(new ACLoginDeniedPacket(2));
+                    return;
+                }
+
+                _log.Debug("Created account from invalid username login with value:" + username);
+                Login(connection, username, password);
             }
         }
 

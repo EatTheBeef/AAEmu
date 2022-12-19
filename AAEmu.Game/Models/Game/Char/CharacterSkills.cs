@@ -1,7 +1,9 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using AAEmu.Game.Core.Managers;
 using AAEmu.Game.Core.Packets.G2C;
+using AAEmu.Game.Models.Game.Chat;
 using AAEmu.Game.Models.Game.Skills;
 using AAEmu.Game.Models.Game.Skills.Templates;
 using MySql.Data.MySqlClient;
@@ -45,10 +47,7 @@ namespace AAEmu.Game.Models.Game.Char
                 return;
 
             if (Skills.ContainsKey(skillId))
-            {
-                Skills[skillId].Level++;
-                Owner.SendPacket(new SCSkillUpgradedPacket(Skills[skillId]));
-            }
+                Owner.SendPacket(new SCSkillLearnedPacket(Skills[skillId]));
             else
                 AddSkill(template, 1, true);
         }
@@ -59,7 +58,7 @@ namespace AAEmu.Game.Models.Game.Char
             {
                 Id = template.Id,
                 Template = template,
-                Level = level
+                Level = (template.LevelStep > 0 ? (byte)(((Owner.GetAbLevel((AbilityType)template.AbilityId) - (template.AbilityLevel)) / template.LevelStep) + 1): (byte)1)
             };
             Skills.Add(skill.Id, skill);
 
@@ -81,12 +80,10 @@ namespace AAEmu.Game.Models.Game.Char
                 return;
             if(PassiveBuffs.ContainsKey(buffId))
                 return;
-            var buff = new PassiveBuff();
-            buff.Id = buffId;
-            buff.Template = template;
+            var buff = new PassiveBuff {Id = buffId, Template = template};
             PassiveBuffs.Add(buff.Id, buff);
             Owner.BroadcastPacket(new SCBuffLearnedPacket(Owner.ObjId, buff.Id), true);
-            // TODO apply buff effect
+            buff.Apply(Owner);
         }
 
         public void Reset(AbilityType abilityId) // TODO with price...
@@ -103,6 +100,7 @@ namespace AAEmu.Game.Models.Game.Char
             {
                 if (buff.Template.AbilityId != (byte)abilityId)
                     continue;
+                buff.Remove(Owner);
                 PassiveBuffs.Remove(buff.Id);
                 _removed.Add(buff.Id);
             }
@@ -116,10 +114,21 @@ namespace AAEmu.Game.Models.Game.Char
             foreach (var skill in Skills.Values)
                 points += skill.Template.SkillPoints;
             foreach (var buff in PassiveBuffs.Values)
-                points += buff.Template.ReqPoints;
+                points += buff.Template?.ReqPoints ?? 1;
             return points;
         }
+        
+        // TODO : Optimize this by storing a map of derivative skills and their matches
+        public bool IsVariantOfSkill(uint skillId)
+        {
+            var skillTemplate = SkillManager.Instance.GetSkillTemplate(skillId);
 
+            return Skills.Values.Any(skill =>
+                skill.Template.AbilityId == skillTemplate.AbilityId &&
+                skill.Template.AbilityLevel == skillTemplate.AbilityLevel);
+        }
+
+        #region database
         public void Load(MySqlConnection connection)
         {
             using (var command = connection.CreateCommand())
@@ -139,11 +148,13 @@ namespace AAEmu.Game.Models.Game.Char
                                     Id = reader.GetUInt32("id"),
                                     Level = reader.GetByte("level")
                                 };
-                                Skills.Add(skill.Id, skill);
+                                AddSkill(skill.Id);
                                 break;
                             case SkillType.Buff:
-                                var buff = new PassiveBuff {Id = reader.GetUInt32("id")};
+                                var buffId = reader.GetUInt32("id");
+                                var buff = new PassiveBuff {Id = buffId, Template = SkillManager.Instance.GetPassiveBuffTemplate(buffId)};
                                 PassiveBuffs.Add(buff.Id, buff);
+                                buff.Apply(Owner);
                                 break;
                         }
                     }
@@ -165,8 +176,8 @@ namespace AAEmu.Game.Models.Game.Char
                     command.Transaction = transaction;
 
                     command.CommandText = "DELETE FROM skills WHERE owner = @owner AND id IN(" + string.Join(",", _removed) + ")";
-                    command.Prepare();
                     command.Parameters.AddWithValue("@owner", Owner.Id);
+                    command.Prepare();
                     command.ExecuteNonQuery();
                     _removed.Clear();
                 }
@@ -206,5 +217,7 @@ namespace AAEmu.Game.Models.Game.Char
                 }
             }
         }
+
+        #endregion
     }
 }

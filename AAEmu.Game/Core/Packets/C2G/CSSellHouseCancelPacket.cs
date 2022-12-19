@@ -1,11 +1,12 @@
-using AAEmu.Commons.Network;
+﻿using AAEmu.Commons.Network;
+using AAEmu.Game.Core.Managers;
 using AAEmu.Game.Core.Network.Game;
 
 namespace AAEmu.Game.Core.Packets.C2G
 {
     public class CSSellHouseCancelPacket : GamePacket
     {
-        public CSSellHouseCancelPacket() : base(0x05f, 1) //TODO 1.0 opcode: 0x05d
+        public CSSellHouseCancelPacket() : base(CSOffsets.CSSellHouseCancelPacket, 1)
         {
         }
 
@@ -14,6 +15,7 @@ namespace AAEmu.Game.Core.Packets.C2G
             var tl = stream.ReadUInt16();
 
             _log.Debug("SellHouseCancel, Tl: {0}", tl);
+            HousingManager.Instance.CancelForSale(tl, true);
         }
     }
 }

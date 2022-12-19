@@ -1,5 +1,7 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
+using AAEmu.Game.Models.Game.AI.v2.Params;
 using AAEmu.Game.Models.Game.Items;
+using AAEmu.Game.Models.Game.Skills.Static;
 using AAEmu.Game.Models.Game.Skills.Templates;
 using AAEmu.Game.Models.Game.Units;
 
@@ -102,6 +104,7 @@ namespace AAEmu.Game.Models.Game.NPChar
         public bool Repairman { get; set; }
         public bool ActivateAiAlways { get; set; }
         public bool Specialty { get; set; }
+        public uint SpecialtyCoinId { get; set; }
         public bool UseRangeMod { get; set; }
         public int NpcPostureSetId { get; set; }
         public int MateEquipSlotPackId { get; set; }
@@ -124,16 +127,35 @@ namespace AAEmu.Game.Models.Game.NPChar
         public uint HairId { get; set; }
         public UnitCustomModelParams ModelParams { get; set; }
         public EquipItemsTemplate Items { get; set; }
-        public uint[] BodyItems { get; set; }
+        public (uint ItemId, bool NpcOnly)[] BodyItems { get; set; }
         public List<uint> Buffs { get; set; }
         public List<BonusTemplate> Bonuses { get; set; }
+        public AiParams AiParams { get; set; }
+        public Dictionary<SkillUseConditionKind, List<NpcSkill>> Skills { get; set; }
+        public List<NpcPassiveBuff> PassiveBuffs { get; set; }
+        public uint TotalCustomId { get; set; }
 
         public NpcTemplate()
         {
+            HairId = 0;
             Items = new EquipItemsTemplate();
-            BodyItems = new uint[7];
+            ModelParams = new UnitCustomModelParams();
+            BodyItems = new (uint, bool)[7];
             Buffs = new List<uint>();
             Bonuses = new List<BonusTemplate>();
+            Skills = new Dictionary<SkillUseConditionKind, List<NpcSkill>>();
+            PassiveBuffs = new List<NpcPassiveBuff>();
+        }
+
+        public void BindSkills(List<NpcSkill> skills)
+        {
+            foreach (var skill in skills)
+            {
+                if (!Skills.ContainsKey(skill.SkillUseCondition))
+                    Skills.Add(skill.SkillUseCondition, new List<NpcSkill>());
+                
+                Skills[skill.SkillUseCondition].Add(skill);
+            }
         }
     }
 }

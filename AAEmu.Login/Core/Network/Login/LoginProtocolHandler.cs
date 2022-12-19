@@ -1,7 +1,8 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Text;
 using AAEmu.Commons.Network;
+using AAEmu.Commons.Network.Core;
 using AAEmu.Login.Core.Network.Connections;
 using NLog;
 
@@ -20,7 +21,7 @@ namespace AAEmu.Login.Core.Network.Login
 
         public override void OnConnect(Session session)
         {
-            _log.Info("Connect from {0} established, session id: {1}", session.Ip.ToString(), session.Id.ToString());
+            _log.Debug($"Connection from {session.Ip} established, session id: {session.SessionId}");
             try
             {
                 var con = new LoginConnection(session);
@@ -36,11 +37,16 @@ namespace AAEmu.Login.Core.Network.Login
 
         public override void OnDisconnect(Session session)
         {
+            if (session is null)
+            {
+                _log.Error("Unexpected null Session");
+                return;
+            }
             try
             {
-                var con = LoginConnectionTable.Instance.GetConnection(session.Id);
+                var con = LoginConnectionTable.Instance.GetConnection(session.SessionId);
                 if (con != null)
-                    LoginConnectionTable.Instance.RemoveConnection(session.Id);
+                    LoginConnectionTable.Instance.RemoveConnection(session.SessionId);
             }
             catch (Exception e)
             {
@@ -48,14 +54,14 @@ namespace AAEmu.Login.Core.Network.Login
                 _log.Error(e);
             }
 
-            _log.Info("Client from {0} disconnected", session.Ip.ToString());
+            _log.Debug($"Client from {session.Ip} disconnected");
         }
 
         public override void OnReceive(Session session, byte[] buf, int bytes)
         {
             try
             {
-                var connection = LoginConnectionTable.Instance.GetConnection(session.Id);
+                var connection = LoginConnectionTable.Instance.GetConnection(session.SessionId);
                 if (connection == null)
                     return;
                 OnReceive(connection, buf, bytes);
@@ -78,7 +84,7 @@ namespace AAEmu.Login.Core.Network.Login
                     connection.LastPacket = null;
                 }
 
-                stream.Insert(stream.Count, buf);
+                stream.Insert(stream.Count, buf, 0, bytes);
                 while (stream != null && stream.Count > 0)
                 {
                     ushort len;

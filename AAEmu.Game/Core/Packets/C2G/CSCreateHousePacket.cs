@@ -1,4 +1,5 @@
-﻿using AAEmu.Commons.Network;
+﻿using System.Numerics;
+using AAEmu.Commons.Network;
 using AAEmu.Commons.Utils;
 using AAEmu.Game.Core.Managers;
 using AAEmu.Game.Core.Managers.World;
@@ -10,7 +11,7 @@ namespace AAEmu.Game.Core.Packets.C2G
 {
     public class CSCreateHousePacket : GamePacket
     {
-        public CSCreateHousePacket() : base(0x057, 1) //TODO 1.0 opcode: 0x055
+        public CSCreateHousePacket() : base(CSOffsets.CSCreateHousePacket, 1)
         {
         }
 
@@ -28,10 +29,9 @@ namespace AAEmu.Game.Core.Packets.C2G
 
             _log.Debug("CreateHouse, Id: {0}, X: {1}, Y: {2}, Z: {3}, ZRot: {4}", designId, x, y, z, zRot);
 
-            var position = new Point(x, y, z);
             HousingManager.Instance.Build(
                 Connection,
-                designId, position, zRot,
+                designId, x, y, z, zRot,
                 itemId, moneyAmount, ht, autoUseAaPoint
             );
         }

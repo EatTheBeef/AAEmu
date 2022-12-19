@@ -1,8 +1,9 @@
 ﻿using System;
+
 using AAEmu.Commons.Network;
 using AAEmu.Commons.Utils;
 
-namespace AAEmu.Game.Models.Game
+namespace AAEmu.Game.Models.Game.Shipyard
 {
     public class ShipyardData : PacketMarshaler
     {
@@ -41,6 +42,7 @@ namespace AAEmu.Game.Models.Game
             stream.Write(Spawned);
             stream.WriteBc(ObjId);
             stream.Write(Hp);
+
             return stream;
         }
     }

@@ -1,16 +1,22 @@
-using AAEmu.Game.Models.Game.DoodadObj.Templates;
+﻿using AAEmu.Game.Models.Game.DoodadObj.Templates;
 using AAEmu.Game.Models.Game.Units;
 
 namespace AAEmu.Game.Models.Game.DoodadObj.Funcs
 {
-    public class DoodadFuncAnimate : DoodadFuncTemplate
+    public class DoodadFuncAnimate : DoodadPhaseFuncTemplate
     {
+        // doodad_phase_funcs
         public string Name { get; set; }
         public bool PlayOnce { get; set; }
 
-        public override void Use(Unit caster, Doodad owner, uint skillId)
+        public override bool Use(Unit caster, Doodad owner)
         {
-            _log.Debug("DoodadFuncAnimate");
+            if (!PlayOnce)
+            {
+                //The client might handle this flag already
+            }
+
+            return false;
         }
     }
 }

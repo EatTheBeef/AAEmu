@@ -1,20 +1,27 @@
-using AAEmu.Commons.Network;
+﻿using AAEmu.Commons.Network;
+using AAEmu.Game.Core.Managers.World;
 using AAEmu.Game.Core.Network.Game;
+using AAEmu.Game.Core.Packets.G2C;
 
 namespace AAEmu.Game.Core.Packets.C2G
 {
     public class CSHangPacket : GamePacket
     {
-        public CSHangPacket() : base(0x0cb, 1)
+        public CSHangPacket() : base(CSOffsets.CSHangPacket, 1)
         {
         }
 
         public override void Read(PacketStream stream)
         {
-            var objId = stream.ReadBc();
-            var obj2Id = stream.ReadBc();
-            
-            _log.Warn("Hang, ObjId: {0}, Obj2Id: {1}", objId, obj2Id);
+            var unitObjId = stream.ReadBc();
+            var targetObjId = stream.ReadBc();
+
+            _log.Trace($"Hang, unitObjId: {unitObjId}, targetObjId: {targetObjId}");
+            var character = WorldManager.Instance.GetBaseUnit(unitObjId);
+            var target = WorldManager.Instance.GetGameObject(targetObjId);
+            if ((character != null) && (target != null))
+                character.Transform.StickyParent = target?.Transform;
+            Connection.ActiveChar.BroadcastPacket(new SCHungPacket(unitObjId,targetObjId),false);
         }
     }
 }

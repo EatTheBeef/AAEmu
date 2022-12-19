@@ -9,7 +9,7 @@ namespace AAEmu.Game.Core.Packets.C2G
 {
     public class CSListCharacterPacket : GamePacket
     {
-        public CSListCharacterPacket() : base(0x020, 1)
+        public CSListCharacterPacket() : base(CSOffsets.CSListCharacterPacket, 1)
         {
         }
 
@@ -43,7 +43,7 @@ namespace AAEmu.Game.Core.Packets.C2G
 //            }
 
             Connection.SendPacket(new SCRaceCongestionPacket());
-
+            
             if (characters.Length == 0)
                 Connection.SendPacket(new SCCharacterListPacket(true, characters));
             else

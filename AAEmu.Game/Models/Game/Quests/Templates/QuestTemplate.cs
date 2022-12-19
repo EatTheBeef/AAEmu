@@ -1,8 +1,10 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
+using System.Linq;
+using AAEmu.Game.Models.Game.Quests.Static;
 
 namespace AAEmu.Game.Models.Game.Quests.Templates
 {
-    public class QuestTemplate
+    public class QuestTemplate : IQuestTemplate
     {
         public uint Id { get; set; }
         public bool Repeatable { get; set; }
@@ -22,19 +24,23 @@ namespace AAEmu.Game.Models.Game.Quests.Templates
         public bool UseAcceptMessage { get; set; }
         public bool UseCompleteMessage { get; set; }
         public uint GradeId { get; set; }
-        public Dictionary<uint, QuestComponent> Components { get; set; }
+        public IDictionary<uint, QuestComponent> Components { get; set; }
 
         public QuestTemplate()
         {
             Components = new Dictionary<uint, QuestComponent>();
         }
 
-        public QuestComponent GetComponent(byte step)
+        public QuestComponent GetFirstComponent(QuestComponentKind step)
         {
-            foreach (var component in Components.Values)
-                if (component.KindId == step)
-                    return component;
-            return null;
+            return Components.Values
+                    .FirstOrDefault(cp => cp.KindId == step);
+        }
+        public QuestComponent[] GetComponents(QuestComponentKind step)
+        {
+            return Components.Values
+                    .Where(cp => cp.KindId == step)
+                    .ToArray();
         }
     }
 }

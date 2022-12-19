@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using AAEmu.Commons.Utils;
-using AAEmu.Game.Utils.DB;
+using AAEmu.Commons.Utils.DB;
 using NLog;
 
 namespace AAEmu.Game.Utils
@@ -15,6 +15,7 @@ namespace AAEmu.Game.Utils
         private BitSet _freeIds;
         private int _freeIdCount;
         private int _nextFreeId;
+        private bool _initialized = false;
 
         private readonly string _name;
         private readonly uint _firstId = 0x00000001;
@@ -38,19 +39,37 @@ namespace AAEmu.Game.Utils
             PrimeFinder.Init();
         }
 
-        public bool Initialize()
+        /// <summary>
+        /// Initializes the IdManager for use by resetting the Ids and grabbing data from the database if needed
+        /// </summary>
+        /// <param name="forceReset">When true forces the re-initialization even if it was previously initialized already</param>
+        /// <returns></returns>
+        public bool Initialize(bool forceReset = false)
         {
+            if (_initialized && (forceReset == false))
+                return true;
+            
             try
             {
                 _freeIds = new BitSet(PrimeFinder.NextPrime(100000));
                 _freeIds.Clear();
                 _freeIdCount = _freeIdSize;
 
-                foreach (var usedObjectId in ExtractUsedObjectIdTable())
+                var allUsedObjects = new uint[0];
+                try
+                {
+                    allUsedObjects = (uint[])ExtractUsedObjectIdTable();
+                }
+                catch
+                {
+                    _log.Warn("{0} failed to read from database, reverting to default", _name);
+                }
+
+                foreach (var usedObjectId in allUsedObjects)
                 {
                     if (_exclude.Contains(usedObjectId))
                         continue;
-                    var objectId = (int) (usedObjectId - _firstId);
+                    var objectId = (int)(usedObjectId - _firstId);
                     if (usedObjectId < _firstId)
                     {
                         _log.Warn("{0}: Object ID {1} in DB is less than {2}", _name, usedObjectId, _firstId);
@@ -73,6 +92,7 @@ namespace AAEmu.Game.Utils
                 return false;
             }
 
+            _initialized = true;
             return true;
         }
 

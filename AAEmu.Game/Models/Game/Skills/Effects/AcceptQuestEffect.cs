@@ -1,4 +1,5 @@
-using System;
+﻿using System;
+using AAEmu.Game.Core.Packets;
 using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Models.Game.Skills.Templates;
 using AAEmu.Game.Models.Game.Units;
@@ -13,9 +14,9 @@ namespace AAEmu.Game.Models.Game.Skills.Effects
 
         public override void Apply(Unit caster, SkillCaster casterObj, BaseUnit target, SkillCastTarget targetObj,
             CastAction castObj,
-            Skill skill, SkillObject skillObject, DateTime time)
+            EffectSource source, SkillObject skillObject, DateTime time, CompressedGamePackets packetBuilder = null)
         {
-            _log.Debug("AcceptQuestEffect");
+            _log.Trace("AcceptQuestEffect");
 
             if (target is Character character)
                 character.Quests.Add(QuestId);

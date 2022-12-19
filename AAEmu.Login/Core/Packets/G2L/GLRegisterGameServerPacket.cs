@@ -1,4 +1,5 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
+using System.Threading.Tasks;
 using AAEmu.Commons.Network;
 using AAEmu.Login.Core.Controllers;
 using AAEmu.Login.Core.Network.Internal;
@@ -9,8 +10,14 @@ namespace AAEmu.Login.Core.Packets.G2L
 {
     public class GLRegisterGameServerPacket : InternalPacket
     {
-        public GLRegisterGameServerPacket() : base(0x00)
+        public GLRegisterGameServerPacket() : base(GLOffsets.GLRegisterGameServerPacket)
         {
+        }
+        
+        async Task SendPacketWithDelay(int delay, InternalPacket message)
+        {
+            await Task.Delay(delay);
+            Connection.SendPacket(message);
         }
 
         public override void Read(PacketStream stream)
@@ -28,8 +35,9 @@ namespace AAEmu.Login.Core.Packets.G2L
             }
             else
             {
-                Connection.SendPacket(new LGRegisterGameServerPacket(GSRegisterResult.Error));
-                _log.Error("Connection {0}, bad secret key", Connection.Ip);
+                _log.Error($"Connection {Connection.Ip}, bad secret key");
+                Task.Run(() => SendPacketWithDelay(5000, new LGRegisterGameServerPacket(GSRegisterResult.Error)));
+                // Connection.SendPacket(new LGRegisterGameServerPacket(GSRegisterResult.Error));
             }
         }
     }

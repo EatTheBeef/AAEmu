@@ -7,8 +7,8 @@ namespace AAEmu.Game.Models.Game.Items
 {
     public class EquipItem : Item
     {
-        public override byte DetailType => 1;
-        
+        public override ItemDetailType DetailType => ItemDetailType.Equipment;
+
         public byte Durability { get; set; }
         public uint RuneId { get; set; }
         public uint[] GemIds { get; set; }
@@ -50,12 +50,13 @@ namespace AAEmu.Game.Models.Game.Items
 
         public override void ReadDetails(PacketStream stream)
         {
-            stream.ReadInt32();
+            ImageItemTemplateId = stream.ReadUInt32();
             Durability = stream.ReadByte();
             stream.ReadInt16();
             RuneId = stream.ReadUInt32();
 
-            stream.ReadBytes(12);
+            ChargeStartTime = stream.ReadDateTime();
+            stream.ReadBytes(4);
 
             for (var i = 0; i < GemIds.Length; i++)
                 GemIds[i] = stream.ReadUInt32();
@@ -66,15 +67,14 @@ namespace AAEmu.Game.Models.Game.Items
 
         public override void WriteDetails(PacketStream stream)
         {
-            stream.Write(0);
+            stream.Write(ImageItemTemplateId);
             stream.Write(Durability);
             stream.Write((short)0);
             stream.Write(RuneId);
 
+            stream.Write(Template.BindType == ItemBindType.BindOnUnpack ? UnpackTime : ChargeStartTime);
             stream.Write((uint)0);
-            stream.Write((uint)0);
-            stream.Write((uint)0);
-
+            
             foreach (var gemId in GemIds)
                 stream.Write(gemId);
 

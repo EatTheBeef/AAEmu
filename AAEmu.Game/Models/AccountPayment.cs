@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using AAEmu.Game.Core.Network.Connections;
 
 namespace AAEmu.Game.Models
@@ -11,7 +11,7 @@ namespace AAEmu.Game.Models
         public int Location { get; set; } = 1;
 
         public DateTime StartTime { get; set; } = DateTime.MinValue;
-        public DateTime EndTime { get; set; } = new DateTime(2020, 1, 1);
+        public DateTime EndTime { get; set; } = new DateTime(2030, 1, 1);
 
         public AccountPayment(GameConnection connection)
         {
@@ -19,6 +19,10 @@ namespace AAEmu.Game.Models
         }
     }
 
+    /// <summary>
+    /// Registered payment type.
+    /// Scripts seem to reference the following types related to labor info: person, person_time, pcbang, trial, event (siege_event)
+    /// </summary>
     public enum PaymentMethodType
     {
         Premium = 1,

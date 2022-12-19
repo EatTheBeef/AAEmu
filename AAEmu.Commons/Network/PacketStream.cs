@@ -2,13 +2,14 @@
 using SBuffer = System.Buffer;
 using System.Collections;
 using System.Collections.Generic;
+using System.Numerics;
 using System.Text;
 using AAEmu.Commons.Conversion;
 using AAEmu.Commons.Utils;
 
 namespace AAEmu.Commons.Network
 {
-    public sealed class MarshalException : Exception // next: нужно ли оно?
+    public sealed class MarshalException : Exception // next: is it necessary?
     {
     }
 
@@ -163,7 +164,7 @@ namespace AAEmu.Commons.Network
         /// <returns></returns>
         public PacketStream Replace(PacketStream stream, int offset, int count)
         {
-            // убрать мусор оставшейся после копирования из PacketStream stream
+            // remove garbage left after copying from PacketStream stream
             return Replace(stream.Buffer, offset, count);
         }
 
@@ -254,7 +255,7 @@ namespace AAEmu.Commons.Network
             if (Count < to)
                 throw new ArgumentOutOfRangeException(nameof(to));
 
-            // копируем байты с позиции to в позицию from, тем самым затирая то, что между
+            // shift good content to erase
             SBuffer.BlockCopy(Buffer, to, Buffer, from, Count -= to - from);
             return this;
         }
@@ -281,9 +282,9 @@ namespace AAEmu.Commons.Network
         public PacketStream Insert(int offset, byte[] copyArray, int copyArrayOffset, int count)
         {
             Reserve(Count + count);
-            // передвигаем данные с позиции offset до позиции offset + count
+            // move data from position offset to position offset + count
             SBuffer.BlockCopy(Buffer, offset, Buffer, offset + count, Count - offset);
-            // копируем новый массив данных в позицию offset
+            // copy the new data array to position offset
             SBuffer.BlockCopy(copyArray, copyArrayOffset, Buffer, offset, count);
             Count += count;
             return this;
@@ -526,7 +527,7 @@ namespace AAEmu.Commons.Network
         public long[] ReadPisc(int count)
         {
             var result = new long[count];
-            var pish = new BitArray(new[] {ReadByte()});
+            var pish = new BitArray(new byte[] { ReadByte() });
             for (var index = 0; index < count * 2; index += 2)
             {
                 if (pish[index] && pish[index + 1]) // uint
@@ -540,6 +541,49 @@ namespace AAEmu.Commons.Network
             }
 
             return result;
+        }
+        
+        public (float x, float y, float z) ReadPosition()
+        {
+            var position = ReadBytes(9);
+            return Helpers.ConvertPosition(position);
+        }
+
+        public Quaternion ReadQuaternionShort()
+        {
+            var quatX = Convert.ToSingle(ReadInt16() * 0.000030518509f);
+            var quatY = Convert.ToSingle(ReadInt16() * 0.000030518509f);
+            var quatZ = Convert.ToSingle(ReadInt16() * 0.000030518509f);
+            var quatNorm = quatX * quatX + quatY * quatY + quatZ * quatZ;
+
+            var quatW = 0.0f;
+            if (quatNorm < 0.99750)
+            {
+                quatW = (float)Math.Sqrt(1.0 - quatNorm);
+            }
+
+            var quat = new Quaternion(quatX, quatY, quatZ, quatW);
+
+            return quat;
+        }
+
+        public Vector3 ReadVector3Single()
+        {
+            var x = ReadSingle();
+            var y = ReadSingle();
+            var z = ReadSingle();
+            var temp = new Vector3(x, y, z);
+            return temp;
+        }
+        
+        public Vector3 ReadVector3Short()
+        {
+            var x = Convert.ToSingle(ReadInt16()) * 0.000030518509f;
+            var y = Convert.ToSingle(ReadInt16()) * 0.000030518509f;
+            var z = Convert.ToSingle(ReadInt16()) * 0.000030518509f;
+            var temp = new Vector3(x, y, z);
+
+            return temp;
         }
 
         #endregion // Read Complex Types
@@ -711,6 +755,59 @@ namespace AAEmu.Commons.Network
             return this;
         }
 
+        public PacketStream WritePosition(float x, float y, float z)
+        {
+            var res = Helpers.ConvertPosition(x, y, z);
+            Write(res);
+            return this;
+        }
+
+        public PacketStream WritePosition(Vector3 pos)
+        {
+            var res = Helpers.ConvertPosition(pos.X, pos.Y, pos.Z);
+            Write(res);
+            return this;
+        }
+
+        
+        public PacketStream WriteQuaternionShort(Quaternion values, bool scalar = false)
+        {
+            var temp = new PacketStream();
+            try
+            {
+                temp.Write(Convert.ToInt16(values.X * 32767f));
+                temp.Write(Convert.ToInt16(values.Y * 32767f));
+                temp.Write(Convert.ToInt16(values.Z * 32767f));
+            }
+            catch
+            {
+                var res = new byte[6];
+                temp.Write(res);
+            }
+            if (scalar)
+            {
+                temp.Write(Convert.ToInt16(values.W));
+            }
+            return Write(temp, false);
+        }
+
+        public PacketStream WriteVector3Single(Vector3 values)
+        {
+            var temp = new PacketStream();
+            temp.Write(values.X);
+            temp.Write(values.Y);
+            temp.Write(values.Z);
+            return Write(temp, false);
+        }
+        public PacketStream WriteVector3Short(Vector3 values)
+        {
+            var temp = new PacketStream();
+            temp.Write(Convert.ToInt16(values.X * 32767f));
+            temp.Write(Convert.ToInt16(values.Y * 32767f));
+            temp.Write(Convert.ToInt16(values.Z * 32767f));
+            return Write(temp, false);
+        }
+
         #endregion // Write Complex Types
 
         #region Write Strings
@@ -774,7 +871,7 @@ namespace AAEmu.Commons.Network
         public int CompareTo(object obj)
         {
             if (!(obj is PacketStream stream))
-                throw new ArgumentException("Object is not an PacketStream instance");
+                throw new ArgumentException("Object is not a PacketStream instance");
             var count = Math.Min(Count, stream.Count);
             for (var i = 0; i < count; i++)
             {

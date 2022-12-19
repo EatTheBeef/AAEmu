@@ -1,9 +1,14 @@
-using AAEmu.Game.Core.Helper;
+﻿using System;
+using System.Threading.Tasks;
 using AAEmu.Game.Core.Managers;
 using AAEmu.Game.Models.Game.Crafts;
 using AAEmu.Game.Models.Game.Items;
-using AAEmu.Game.Models.Game.Items.Templates;
+using AAEmu.Game.Models.Game.Items.Actions;
 using AAEmu.Game.Models.Game.Skills;
+using AAEmu.Game.Models.Tasks.Characters;
+using AAEmu.Game.Models.Tasks.Skills;
+using AAEmu.Game.Utils;
+using SQLitePCL;
 
 namespace AAEmu.Game.Models.Game.Char
 {
@@ -14,7 +19,7 @@ namespace AAEmu.Game.Models.Game.Char
         private uint _doodadId { get; set; }
 
         public Character Owner { get; set; }
-        public bool IsCrafting = false;
+        public bool IsCrafting { get; set; }
 
         public CharacterCraft(Character owner) => Owner = owner;
 
@@ -28,23 +33,8 @@ namespace AAEmu.Game.Models.Game.Char
 
             foreach (var craftMaterial in craft.CraftMaterials)
             {
-                var materialItem = Owner.Inventory.GetItemByTemplateId(craftMaterial.ItemId);
-                if (materialItem == null || materialItem.Count < craftMaterial.Amount)
-                {
+                if (Owner.Inventory.GetItemsCount(craftMaterial.ItemId) < craftMaterial.Amount)
                     hasMaterials = false;
-                }
-            }
-
-            if (_craft.IsPack)
-            {
-                var item = Owner.Inventory.GetItem(SlotType.Equipment, (byte)EquipmentItemSlot.Backpack);
-                var backpackTemplate = (BackpackTemplate)item?.Template;
-                if (backpackTemplate != null && backpackTemplate.BackpackType != BackpackType.Glider)
-                {
-                    // TODO mb check to drop glider to inventory
-                    CancelCraft();
-                    return;
-                }
             }
 
             if (hasMaterials)
@@ -68,51 +58,74 @@ namespace AAEmu.Game.Models.Game.Char
             IsCrafting = false;
 
             if (_craft == null)
-                return;
-
-            if (Owner.Inventory.CountFreeSlots(SlotType.Inventory) < _craft.CraftProducts.Count)
-                return;
-
-            foreach (var material in _craft.CraftMaterials)
             {
-                var materialItem = Owner.Inventory.GetItemByTemplateId(material.ItemId);
-                InventoryHelper.RemoveItemAndUpdateClient(Owner, materialItem, material.Amount);
+                CancelCraft();
+                return;
+            }
+
+            if (Owner.Inventory.FreeSlotCount(SlotType.Inventory) < _craft.CraftProducts.Count)
+            {
+                CancelCraft();
+                return;
             }
 
             foreach (var product in _craft.CraftProducts)
             {
-                if (!_craft.IsPack)
+                // Check if we're crafting a tradepack, if so, try to remove currently equipped backpack slot
+                if (ItemManager.Instance.IsAutoEquipTradePack(product.ItemId) == false)
                 {
-                    var resultItem = ItemManager.Instance.Create(product.ItemId, product.Amount, 0);
-                    InventoryHelper.AddItemAndUpdateClient(Owner, resultItem);
+                    Owner.Inventory.Bag.AcquireDefaultItem(ItemTaskType.CraftActSaved, product.ItemId, product.Amount, -1, Owner.Id);
+                    // Owner.Inventory.Bag.AcquireDefaultItem(Items.Actions.ItemTaskType.CraftPickupProduct, product.ItemId, product.Amount, -1, Owner.Id);
                 }
                 else
                 {
-                    // Remove player backpack
-                    Owner.Inventory.TakeoffBackpack();
-                    // Put tradepack in their backpack slot
-                    var resultItem = ItemManager.Instance.Create(product.ItemId, product.Amount, 0);
-                    InventoryHelper.AddItemAndUpdateClient(Owner, resultItem);
-                    Owner.Inventory.Move(resultItem.Id, resultItem.SlotType, (byte)resultItem.Slot, 0,
-                        SlotType.Equipment, (byte)EquipmentItemSlot.Backpack);
+                    if (!Owner.Inventory.TryEquipNewBackPack(ItemTaskType.CraftPickupProduct, product.ItemId, product.Amount,-1,Owner.Id))
+                    {
+                        CancelCraft();
+                        return;
+                    }
                 }
             }
 
-            if (_count > 0 && !_craft.IsPack)
-                Craft(_craft, _count, _doodadId);
+            foreach (var material in _craft.CraftMaterials)
+            {
+                Owner.Inventory.Bag.ConsumeItem(ItemTaskType.CraftActSaved, material.ItemId, material.Amount,null);
+            }
+            
+            Owner.Quests.OnCraft(_craft); // TODO added for quest Id=6024
+
+            if (_count > 0)
+            {
+                var newCraft = new CraftTask(Owner, _craft.Id, _doodadId, _count);
+                var skillTemplate = SkillManager.Instance.GetSkillTemplate(_craft.SkillId);
+                var timeToGlobalCooldown = Owner.GlobalCooldown - DateTime.UtcNow;
+                var nextCraftDelay = timeToGlobalCooldown.TotalMilliseconds > skillTemplate.CooldownTime
+                    ? timeToGlobalCooldown
+                    : TimeSpan.FromMilliseconds(skillTemplate.CooldownTime);
+                TaskManager.Instance.Schedule(newCraft, nextCraftDelay, null, 1);
+                // Owner.SendMessage($"Continue craft: {_craft.Id} for {_count} more times TaskId: {newCraft.Id}, cooldown: {nextCraftDelay.TotalMilliseconds}ms");
+                // Craft(_craft, _count, _doodadId);
+            }
             else
             {
                 CancelCraft();
             }
         }
 
-        // Not called for now. Needs to be called when crafting is cancelled.
         public void CancelCraft()
         {
             IsCrafting = false;
             _craft = null;
             _count = 0;
             _doodadId = 0;
+            
+            // Also cancel the related skill ? I don't think this really does anything for crafts, but can't hurt I guess
+            if (Owner != null)
+            {
+                if (Owner.SkillTask != null)
+                    Owner.SkillTask.Skill.Cancelled = true;
+                Owner.InterruptSkills();
+            }
 
             // Might want to send a packet here, I think there is a packet when crafting fails. Not sure yet..
         }

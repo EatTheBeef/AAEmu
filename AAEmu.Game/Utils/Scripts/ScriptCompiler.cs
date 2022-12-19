@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
@@ -41,23 +41,39 @@ namespace AAEmu.Game.Utils.Scripts
 
         private static void OnLoad()
         {
+            var hasErrors = false;
             _scriptsObjects.Clear();
             var types = _assembly.GetTypes();
             foreach (var type in types)
             {
                 if (type.IsNested)
                     continue;
-                var obj = Activator.CreateInstance(type);
-                var script = new ScriptObject(type, obj);
-                _scriptsObjects.Add(script.Name, script);
-                script.Invoke("OnLoad");
+                if (type.IsAbstract)
+                    continue;
+                try
+                {
+                    var obj = Activator.CreateInstance(type);
+                    var script = new ScriptObject(type, obj);
+                    _scriptsObjects.Add(script.Name, script);
+                    script.Invoke("OnLoad");
+                }
+                catch (Exception e)
+                {
+                    hasErrors = true;
+                    _log.Error($"Error in {type}");
+                    _log.Error(e);
+                }
             }
+            if (hasErrors)
+                _log.Warn($"There were some errors when compiling the user scripts !");
+                // throw new Exception("There were errors in the user scripts !");
         }
 
         public static bool CompileScripts(out Assembly assembly)
         {
             _log.Info("Compiling scripts...");
             var files = GetScripts("*.cs");
+            var isOk = true;
 
             if (files.Length == 0)
             {
@@ -90,15 +106,16 @@ namespace AAEmu.Game.Utils.Scripts
                     assemblyResult = AssemblyLoadContext.Default.LoadFromStream(ms);
                 }
 
-                Display(result.Diagnostics);
+                isOk = Display(result.Diagnostics);
             }
 
             assembly = assemblyResult;
-            return assemblyResult != null;
+            return (assemblyResult != null) && (isOk);
         }
 
-        private static void Display(ImmutableArray<Diagnostic> diagnostics)
+        private static bool Display(ImmutableArray<Diagnostic> diagnostics)
         {
+            bool res = true;
             if (diagnostics.Length == 0)
             {
                 _log.Info("Compile done (0 errors, 0 warnings)");
@@ -109,7 +126,10 @@ namespace AAEmu.Game.Utils.Scripts
                 var warningCount = diagnostics.Count(x => x.Severity == DiagnosticSeverity.Warning);
 
                 if (errorCount > 0)
+                {
+                    res = false;
                     _log.Error("Compile failed ({0} errors, {1} warnings)", errorCount, warningCount);
+                }
                 else
                     _log.Info("Compile done ({0} errors, {1} warnings)", errorCount, warningCount);
 
@@ -119,11 +139,13 @@ namespace AAEmu.Game.Utils.Scripts
                 foreach (var diagnostic in result)
                 {
                     if (diagnostic.Severity == DiagnosticSeverity.Error)
-                        _log.Error("{0}: {1}", diagnostic.Id, diagnostic.GetMessage());
+                        _log.Error(diagnostic);
                     else
-                        _log.Warn("{0}: {1}", diagnostic.Id, diagnostic.GetMessage());
+                        _log.Warn(diagnostic);
                 }
             }
+
+            return res;
         }
 
         private static void EnsureDirectory(string dir)

@@ -6,9 +6,9 @@ namespace AAEmu.Game.Core.Packets.G2C
 {
     public class SCMateSpawnedPacket : GamePacket
     {
-        private readonly Mount _mate;
+        private readonly Mate _mate;
 
-        public SCMateSpawnedPacket(Mount mate) : base(SCOffsets.SCMateSpawnedPacket, 1)
+        public SCMateSpawnedPacket(Mate mate) : base(SCOffsets.SCMateSpawnedPacket, 1)
         {
             _mate = mate;
         }
@@ -20,7 +20,7 @@ namespace AAEmu.Game.Core.Packets.G2C
             stream.Write(_mate.Id);
             stream.Write(_mate.ItemId);
             stream.Write(_mate.UserState);
-            stream.Write(_mate.Exp);
+            stream.Write(_mate.Experience);
             stream.Write(_mate.Mileage);
             stream.Write(_mate.SpawnDelayTime);
 

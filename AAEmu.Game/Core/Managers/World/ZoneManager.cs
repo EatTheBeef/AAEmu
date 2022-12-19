@@ -1,5 +1,7 @@
 ﻿using System.Collections.Generic;
+using System.Drawing;
 using System.Linq;
+using System.Numerics;
 using AAEmu.Commons.Utils;
 using AAEmu.Game.Models.Game.World.Zones;
 using AAEmu.Game.Utils.DB;
@@ -29,10 +31,19 @@ namespace AAEmu.Game.Core.Managers.World
         {
             return _zones.ContainsKey(zoneKey) ? _zones[zoneKey] : null;
         }
-        
+
         public ZoneGroup GetZoneGroupById(uint zoneId)
         {
             return _groups.ContainsKey(zoneId) ? _groups[zoneId] : null;
+        }
+
+        public List<uint> GetZoneKeysInZoneGroupById(uint zoneGroupId)
+        {
+            var res = new List<uint>();
+            foreach (var z in _zones)
+                if (z.Value.GroupId == zoneGroupId)
+                    res.Add(z.Value.ZoneKey);
+            return res;
         }
 
         public uint GetTargetIdByZoneId(uint zoneId)
@@ -75,7 +86,7 @@ namespace AAEmu.Game.Core.Managers.World
                         }
                     }
                 }
-
+                
                 _log.Info("Loaded {0} zones", _zones.Count);
 
                 using (var command = connection.CreateCommand())
@@ -88,7 +99,7 @@ namespace AAEmu.Game.Core.Managers.World
                         {
                             var template = new ZoneGroup();
                             template.Id = reader.GetUInt32("id");
-                            template.Name = (string) reader.GetValue("name");
+                            template.Name = (string)reader.GetValue("name");
                             template.X = reader.GetFloat("x");
                             template.Y = reader.GetFloat("y");
                             template.Width = reader.GetFloat("w");
@@ -98,7 +109,8 @@ namespace AAEmu.Game.Core.Managers.World
                             template.PirateDesperado = reader.GetBoolean("pirate_desperado", true);
                             template.FishingSeaLootPackId = reader.GetUInt32("fishing_sea_loot_pack_id", 0);
                             template.FishingLandLootPackId = reader.GetUInt32("fishing_land_loot_pack_id", 0);
-                            // TODO 1.2 // template.BuffId = reader.GetUInt32("buff_id", 0);
+                            // 1.2 added BuffId
+                            template.BuffId = reader.GetUInt32("buff_id", 0);
                             _groups.Add(template.Id, template);
                         }
                     }
@@ -119,7 +131,7 @@ namespace AAEmu.Game.Core.Managers.World
                             {
                                 var template = new ZoneConflict(_groups[zoneGroupId]);
                                 template.ZoneGroupId = zoneGroupId;
-                                
+
                                 for (var i = 0; i < 5; i++)
                                 {
                                     template.NumKills[i] = reader.GetInt32($"num_kills_{i}");
@@ -135,9 +147,15 @@ namespace AAEmu.Game.Core.Managers.World
                                 template.HariharaReturnPointId = reader.GetUInt32("harihara_return_point_id", 0);
                                 template.WarTowerDefId = reader.GetUInt32("war_tower_def_id", 0);
                                 // TODO 1.2 // template.PeaceTowerDefId = reader.GetUInt32("peace_tower_def_id", 0);
+                                template.Closed = reader.GetBoolean("closed", true);
 
                                 _groups[zoneGroupId].Conflict = template;
                                 _conflicts.Add(zoneGroupId, template);
+
+                                // Only do intial setup when the zone isn't closed
+                                if (!template.Closed)
+                                    template.SetState(ZoneConflictType
+                                        .Conflict); // Set to Conflict for testing, normally it should start at Tension
                             }
                             else
                                 _log.Warn("ZoneGroupId: {1} doesn't exist for conflict", zoneGroupId);
@@ -183,6 +201,33 @@ namespace AAEmu.Game.Core.Managers.World
 
                 _log.Info("Loaded {0} climate elems", _climateElem.Count);
             }
+        }
+
+
+        public Vector2 GetZoneOriginCell(uint zoneId)
+        {
+            var world = WorldManager.Instance.GetWorldByZone(zoneId);
+            if (world != null && world.XmlWorldZones.TryGetValue(zoneId, out var xmlZone))
+            {
+                return new Vector2(xmlZone.OriginX, xmlZone.OriginY);
+            }
+            return new Vector2();
+        }
+
+        /// <summary>
+        /// translate the local coordinates to the world coordinates using the original coordinates of the cells for the zone
+        /// </summary>
+        /// <param name="zoneId">zoneKey</param>
+        /// <param name="point">offset inside the zone</param>
+        /// <returns></returns>
+        public Vector3 ConvertToWorldCoordinates(uint zoneId, Vector3 point)
+        {
+            var origin = GetZoneOriginCell(zoneId);
+        
+            var newX = origin.X * 1024f + point.X;
+            var newY = origin.Y * 1024f + point.Y;
+
+            return new Vector3(newX, newY, point.Z);
         }
     }
 }
